@@ -1,0 +1,6 @@
+langgraph
+groq
+pymongo
+python-dotenv
+mysql-connector-python
+email-validator
