@@ -4,3 +4,5 @@ pymongo
 python-dotenv
 mysql-connector-python
 email-validator
+google-api-python-client
+dateparser

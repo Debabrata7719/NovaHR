@@ -12,6 +12,7 @@ from src.main_agent.memory import (
 )
 from src.main_agent.router import route_task, parse_email_details
 from src.main_agent.agents.email.executor import execute_email_task
+from src.main_agent.agents.scheduling.executor import execute_scheduling_task
 
 
 class MainAgentState(TypedDict):
@@ -31,6 +32,7 @@ class MainAgentState(TypedDict):
 
 # ── Node functions ──────────────────────────────────────────────────────────
 
+
 def check_memory(state: MainAgentState) -> MainAgentState:
     try:
         state["memory_context"] = get_memory_context(
@@ -43,7 +45,8 @@ def check_memory(state: MainAgentState) -> MainAgentState:
 
 def route_to_agent(state: MainAgentState) -> MainAgentState:
     try:
-        routing_result = route_task(state["user_input"])
+        memory_context = state.get("memory_context", "")
+        routing_result = route_task(state["user_input"], memory_context)
         state["intent"] = routing_result["intent"]
         state["routing_result"] = routing_result
         state["error"] = None
@@ -136,8 +139,54 @@ def execute_task(state: MainAgentState) -> MainAgentState:
         elif state["intent"] == "general":
             state["execution_result"] = {
                 "success": True,
-                "response": "I'm here to help! Currently I can send emails to employees. Just tell me what you'd like to communicate and to whom.",
+                "response": "I'm here to help! Currently I can send emails to employees and manage calendar events. Just tell me what you'd like to communicate or schedule.",
                 "action_summary": "General query - responded with help message",
+            }
+        elif state["intent"] == "scheduling":
+            employee_memory = state.get("employee_memory", "")
+            memory_context = state.get("memory_context", "")
+
+            execution_result = execute_scheduling_task(
+                user_input=state["user_input"],
+                employee_memory=employee_memory,
+                memory_context=memory_context,
+            )
+            state["execution_result"] = execution_result
+        elif state["intent"] == "memory":
+            from src.main_agent.memory import get_recent_memories
+
+            user_input_lower = state["user_input"].lower()
+
+            date_filter = None
+            if "today" in user_input_lower:
+                date_filter = "today"
+            elif "yesterday" in user_input_lower:
+                date_filter = "yesterday"
+
+            recent_tasks = get_recent_memories(limit=5, date_filter=date_filter)
+
+            if recent_tasks:
+                task_list = []
+                for i, task in enumerate(recent_tasks, 1):
+                    timestamp = task.get("timestamp", "N/A")
+                    if "T" in timestamp:
+                        timestamp = timestamp.split("T")[0]
+                    output = task.get("output", task.get("action_taken", "N/A"))
+                    agent = task.get("agent", "N/A")
+                    task_list.append(f"{i}. [{timestamp}] {output} (via {agent})")
+
+                response_text = "Here are your recent activities:\n" + "\n".join(
+                    task_list
+                )
+            else:
+                response_text = (
+                    "No previous activities found. This is your first interaction!"
+                )
+
+            state["execution_result"] = {
+                "success": True,
+                "response": response_text,
+                "action_summary": response_text,
             }
         else:
             state["execution_result"] = {
@@ -182,6 +231,15 @@ def save_memory(state: MainAgentState) -> MainAgentState:
                     "total_skipped", 0
                 ),
             }
+        elif intent == "scheduling":
+            exec_details = execution_result.get("details", {})
+            details = {
+                "action": execution_result.get("action", ""),
+                "title": exec_details.get("title", ""),
+                "date": exec_details.get("date", ""),
+                "time": exec_details.get("time", ""),
+                "event_id": exec_details.get("event_id", ""),
+            }
         else:
             details = {}
 
@@ -201,6 +259,16 @@ def save_memory(state: MainAgentState) -> MainAgentState:
         elif emp_id:
             save_employee_task_entry(
                 emp_id=emp_id,
+                intent=intent,
+                agent=agent,
+                task_input=user_input,
+                task_output=action_summary,
+                details=details,
+                status=status,
+            )
+        elif intent == "scheduling":
+            save_employee_task_entry(
+                emp_id="calendar_user",
                 intent=intent,
                 agent=agent,
                 task_input=user_input,
@@ -236,14 +304,16 @@ def save_memory(state: MainAgentState) -> MainAgentState:
 
 # ── Conditional edge: route after intent classification ─────────────────────
 
+
 def should_extract_details(state: MainAgentState) -> str:
-    """After routing, only extract details for email intent."""
+    """After routing, only extract details for email intent. Scheduling handles its own."""
     if state["intent"] == "email":
         return "extract_details"
     return "execute_task"
 
 
 # ── Build the LangGraph StateGraph ──────────────────────────────────────────
+
 
 def _build_graph() -> StateGraph:
     graph = StateGraph(MainAgentState)
@@ -285,6 +355,7 @@ _graph = _build_graph()
 
 
 # ── Public entry point ───────────────────────────────────────────────────────
+
 
 def run_main_agent(user_input: str) -> dict:
     initial_state = MainAgentState(

@@ -224,7 +224,7 @@ def get_all_employees_memory() -> list[dict]:
     return list(collection.find({}))
 
 
-def get_recent_memories(limit: int = 10) -> list:
+def get_recent_memories(limit: int = 10, date_filter: str = None) -> list:
     collection = get_employee_memory_collection()
     all_docs = list(collection.find({}))
     all_last_tasks = []
@@ -232,7 +232,58 @@ def get_recent_memories(limit: int = 10) -> list:
         task_history = doc.get("task_history", [])
         if task_history:
             all_last_tasks.append(task_history[-1])
-    # Sort by timestamp stored inside each task entry
+
+    # Filter by date if date_filter is provided
+    if date_filter:
+        from datetime import datetime, timedelta
+
+        today = datetime.now().date()
+
+        if date_filter == "today":
+            filtered_tasks = []
+            for task in all_last_tasks:
+                ts = task.get("timestamp", "")
+                if ts:
+                    try:
+                        task_date = datetime.fromisoformat(ts).date()
+                        if task_date == today:
+                            filtered_tasks.append(task)
+                    except:
+                        pass
+            all_last_tasks = filtered_tasks
+        elif date_filter == "yesterday":
+            yesterday = (datetime.now() - timedelta(days=1)).date()
+            filtered_tasks = []
+            for task in all_last_tasks:
+                ts = task.get("timestamp", "")
+                if ts:
+                    try:
+                        task_date = datetime.fromisoformat(ts).date()
+                        if task_date == yesterday:
+                            filtered_tasks.append(task)
+                    except:
+                        pass
+            all_last_tasks = filtered_tasks
+        else:
+            date_obj = None
+            try:
+                date_obj = datetime.strptime(date_filter, "%Y-%m-%d").date()
+            except:
+                pass
+
+            if date_obj:
+                filtered_tasks = []
+                for task in all_last_tasks:
+                    ts = task.get("timestamp", "")
+                    if ts:
+                        try:
+                            task_date = datetime.fromisoformat(ts).date()
+                            if task_date == date_obj:
+                                filtered_tasks.append(task)
+                        except:
+                            pass
+                all_last_tasks = filtered_tasks
+
     all_last_tasks.sort(
         key=lambda t: t.get("timestamp", ""),
         reverse=True,

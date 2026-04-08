@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from src.main_agent import run_main_agent
+from src.tools.reminder_service import start_reminder_service
 
 load_dotenv()
 
@@ -10,11 +11,7 @@ def print_result(result: dict):
     print("=" * 60)
 
     print(f"\n[Intent] {result['intent'].upper()}")
-    print(f"[Memory Stored] {'✓ Yes' if result.get('memory_stored') else '✗ No'}")
-
-    if result.get("memory_context") and "No previous" not in result["memory_context"]:
-        print(f"\n[Recent Memory]")
-        print(result["memory_context"])
+    print(f"[Memory Stored] {'Yes' if result.get('memory_stored') else 'No'}")
 
     execution = result.get("execution_result", {})
     print(f"\n[Action] {execution.get('action_summary', 'N/A')}")
@@ -53,6 +50,8 @@ def main():
     print("     NOVAHR MAIN AGENT")
     print("     AI-Powered Task Router")
     print("=" * 60)
+
+    start_reminder_service()
 
     while True:
         user_input = input("\nWhat would you like to do- ").strip()

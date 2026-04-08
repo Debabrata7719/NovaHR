@@ -6,25 +6,7 @@ load_dotenv()
 
 _client = None
 
-AVAILABLE_AGENTS = ["email", "general"]
-
-SYSTEM_PROMPT = """You are a task router for NovaHR assistant. Your job is to classify user requests into one of these categories:
-
-1. "email" - Send emails, email-related tasks, communicate with employees
-2. "general" - Conversational, help requests, or unrecognized tasks
-
-Rules:
-- Be conservative: if unsure, default to "general"
-- "email" is only for clear email sending/communication tasks
-- Return ONLY the category name in lowercase
-- Do not include quotes or extra text
-"""
-
-ROUTING_PROMPT = """Classify this user request:
-
-User: {user_input}
-
-Category:"""
+AVAILABLE_AGENTS = ["email", "scheduling", "memory", "general"]
 
 
 def get_groq_client():
@@ -37,10 +19,47 @@ def get_groq_client():
     return _client
 
 
-def route_task(user_input: str) -> dict:
+SYSTEM_PROMPT = """You are a task router for NovaHR assistant. Your job is to classify user requests into one of these categories:
+
+1. "email" - Send emails, email-related tasks, communicate with employees
+2. "scheduling" - Calendar-related tasks, create events, view events, schedule meetings
+3. "memory" - Questions about past tasks, previous activities, history, "what did I do?"
+4. "general" - Conversational, help requests, or unrecognized tasks
+
+Rules:
+- "memory" is for questions like: "what did I do?", "show my history", "what was my last task?", "give me my activity log"
+- If user asks about past activities, previous tasks, or history → use "memory"
+- Be conservative: if unsure, default to "general"
+- "email" is only for clear email sending/communication tasks
+- "scheduling" is for calendar, events, meetings, schedule-related tasks
+- Consider the user's conversation history when classifying
+- Return ONLY the category name in lowercase
+- Do not include quotes or extra text
+"""
+
+ROUTING_PROMPT = """Classify this user request. Consider the conversation history:
+
+Conversation History:
+{memory_context}
+
+User: {user_input}
+
+Category:"""
+
+
+def route_task(user_input: str, memory_context: str = "") -> dict:
     client = get_groq_client()
 
-    prompt = ROUTING_PROMPT.format(user_input=user_input)
+    if memory_context:
+        prompt = ROUTING_PROMPT.format(
+            user_input=user_input, memory_context=memory_context
+        )
+    else:
+        prompt = f"""Classify this user request:
+
+User: {user_input}
+
+Category:"""
 
     try:
         response = client.chat.completions.create(
